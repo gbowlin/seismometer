@@ -2,9 +2,9 @@ from collections.abc import Iterable
 from typing import Optional
 
 import traitlets
-from ipywidgets import HTML, Box, Dropdown, Label, Layout, Stack, ToggleButton, ValueWidget, VBox, jslink
+from ipywidgets import HTML, Box, Button, Dropdown, Label, Layout, Stack, ToggleButton, ValueWidget, VBox, jslink
 
-from .styles import html_title
+from .styles import DROPDOWN_LAYOUT, WIDE_LABEL_STYLE, html_title
 
 
 class SelectionListWidget(ValueWidget, VBox):
@@ -242,11 +242,8 @@ class DisjointSelectionListsWidget(ValueWidget, VBox):
             selection_value = values[dropdown_value]
             value = (dropdown_value, selection_value)
 
-        self.dropdown = Dropdown(
-            options=[key for key in values],
-            value=value[0],
-            layout=Layout(width="calc(max(max-content, var(--jp-widgets-inline-width-short)))"),
-        )
+        self.dropdown = Dropdown(options=[key for key in values], value=value[0], layout=DROPDOWN_LAYOUT)
+
         self.dropdown.observe(self._on_selection_change, "value")
         self.selection_widgets = {}
         for key in options:
@@ -288,3 +285,87 @@ class DisjointSelectionListsWidget(ValueWidget, VBox):
         """Return the selection for the widget as a key value pair."""
         key = self.value[0]
         return f"{key}: {self.selection_widgets[key].get_selection_text()}"
+
+
+class MultiselectDropdownWidget(ValueWidget, VBox):
+    """
+    A multi select dropdown which allows multiple selections from a dropdown which get displayed as toggle buttons.
+    """
+
+    value = traitlets.Tuple(help="The selected values for the dropdown.")
+
+    def __init__(self, options: tuple[str], value: Optional[tuple[str]] = None, *, title: str = ""):
+        """
+        A dropdown selector where multiple selections are allowed.
+
+        Parameters
+        ----------
+        options : tuple[str]
+            Dropdown entries.
+        value : Optional[tuple[str]], optional
+            Pre-selected values, by default None.
+        title : str, optional
+            Display above the dropdown, by default "".
+        """
+        self.options = options
+        self.value = tuple(value) if value else ()
+
+        self.dropdown = Dropdown(
+            description=title, options=[("Add...", "")] + list(zip(options, options)), value="", style=WIDE_LABEL_STYLE
+        )
+        self.selection_options = VBox(children=[], layout=Layout(align_self="flex-end"))
+        self.buttons = {
+            option: Button(description=option, tooltip=f"remove {option}", indent=True) for option in options
+        }
+
+        for val in self.value:
+            self._insert_button(val)
+
+        children = [self.dropdown, self.selection_options]
+        super().__init__(children=children, layout=Layout(width="min-content"))
+
+        for button in self.buttons.values():
+            button.on_click(self._remove_button)
+        self.dropdown.observe(self._on_dropdown_changed, "value")
+        self.observe(self._on_value_change, "value")
+        self._disabled = False
+
+    def _remove_button(self, button, update_value=True):
+        self.selection_options.children = [child for child in self.selection_options.children if child != button]
+        if update_value:
+            self.value = tuple(val for val in self.value if val != button.description)
+
+    def _insert_button(self, val):
+        button = self.buttons[val]
+        if button not in self.selection_options.children:
+            self.selection_options.children = [child for child in self.selection_options.children] + [button]
+
+    def _on_dropdown_changed(self, change):
+        if change["owner"] != self.dropdown:
+            return
+        val = change["new"]
+        if val == "" or val in self.value:
+            self.dropdown.value = ""
+            return
+        self._insert_button(val)
+        self.value = tuple([val for val in self.value] + [val])
+        self.dropdown.value = ""
+
+    @property
+    def disabled(self) -> bool:
+        return self._disabled
+
+    @disabled.setter
+    def disabled(self, disabled: bool):
+        self._disabled = disabled
+        self.dropdown.disabled = disabled
+        for button in self.buttons.values():
+            button.disabled = disabled
+
+    def _on_value_change(self, change=None):
+        """Bubble up changes."""
+        for button in self.selection_options.children:
+            self._remove_button(button, update_value=False)
+        for val in change["new"]:
+            self._insert_button(val)
+        self.dropdown.value = ""

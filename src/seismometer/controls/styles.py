@@ -4,6 +4,7 @@ WIDE_LABEL_STYLE = {"description_width": "120px"}
 
 BOX_GRID_LAYOUT = Layout(align_items="flex-start", grid_gap="20px", width="max-content", min_width="300px")
 WIDE_BUTTON_LAYOUT = Layout(align_items="flex-start", width="max-content", min_width="200px")
+DROPDOWN_LAYOUT = Layout(width="calc(max(max-content, var(--jp-widgets-inline-width-short)))")
 
 
 def html_title(title: str) -> HTML:

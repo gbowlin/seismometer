@@ -275,6 +275,8 @@ class ConfigProvider:
 
         Configured in usage_data as outputs or primary_output.
         """
+        if self.output in self.usage.outputs:
+            return self.usage.outputs
         return [self.output] + self.usage.outputs
 
     @property

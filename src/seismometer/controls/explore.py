@@ -6,7 +6,12 @@ import traitlets
 from IPython.display import display
 from ipywidgets import HTML, Box, Button, Checkbox, Dropdown, FloatSlider, HBox, Layout, Output, ValueWidget, VBox
 
-from .selection import DisjointSelectionListsWidget, MultiSelectionListWidget, SelectionListWidget
+from .selection import (
+    DisjointSelectionListsWidget,
+    MultiselectDropdownWidget,
+    MultiSelectionListWidget,
+    SelectionListWidget,
+)
 from .styles import BOX_GRID_LAYOUT, WIDE_LABEL_STYLE, html_title
 from .thresholds import MonotonicProbabilitySliderListWidget
 
@@ -135,6 +140,7 @@ class ModelOptionsWidget(VBox, ValueWidget):
             children=children,
             layout=Layout(align_items="flex-start", flex="0 0 auto"),
         )
+        self._on_value_change()
         self._disabled = False
 
     @property
@@ -182,6 +188,170 @@ class ModelOptionsWidget(VBox, ValueWidget):
             return self.per_context_checkbox.value
 
 
+class ModelScoreComparisonOptionsWidget(VBox, ValueWidget):
+    value = traitlets.Dict(help="The selected values for the model options and scores to compair")
+
+    def __init__(
+        self,
+        target_names: tuple[Any],
+        score_names: tuple[Any],
+        per_context: Optional[bool] = None,
+    ):
+        """Widget for model based options
+
+        Parameters
+        ----------
+        target_names : tuple[Any]
+            list of target column names
+        score_names : tuple[Any]
+            list of model score names
+        thresholds : dict[str, float]
+            list of thresholds for the model scores, will be sorted into decreasing order
+        per_context : bool, optional
+            if scores should be grouped by context, by default None, in which case this checkbox is not shown.
+        """
+        self.title = html_title("Model Options")
+        self.target_list = Dropdown(
+            options=target_names,
+            value=target_names[0],
+            description="Target Column",
+            style=WIDE_LABEL_STYLE,
+        )
+        self.score_list = MultiselectDropdownWidget(
+            options=score_names, value=score_names[0:2], title="Compare Scores"
+        )
+
+        self.target_list.observe(self._on_value_change, "value")
+        self.score_list.observe(self._on_value_change, "value")
+        children = [self.title, self.target_list, self.score_list]
+
+        if per_context is not None:
+            self.per_context_checkbox = Checkbox(
+                value=per_context,
+                description="combine scores",
+                disabled=False,
+                tooltip="Combine scores by taking the maximum score in the target window",
+                style=WIDE_LABEL_STYLE,
+            )
+            children.append(self.per_context_checkbox)
+            self.per_context_checkbox.observe(self._on_value_change, "value")
+        else:
+            self.per_context_checkbox = None
+
+        super().__init__(
+            children=children,
+            layout=Layout(align_items="flex-start", flex="0 0 auto"),
+        )
+        self._on_value_change()
+        self._disabled = False
+
+    @property
+    def disabled(self) -> bool:
+        return self._disabled
+
+    @disabled.setter
+    def disabled(self, disabled: bool):
+        self._disabled = disabled
+        self.target_list.disabled = disabled
+        self.score_list.disabled = disabled
+        if self.per_context_checkbox:
+            self.per_context_checkbox.disabled = disabled
+
+    def _on_value_change(self, change=None):
+        self.value = {
+            "target": self.target,
+            "scores": self.scores,
+            "group_scores": self.group_scores,
+        }
+
+    @property
+    def target(self) -> str:
+        """target column descriptor"""
+        return self.target_list.value
+
+    @property
+    def scores(self) -> tuple[str]:
+        """score column descriptor"""
+        return self.score_list.value
+
+    @property
+    def group_scores(self) -> bool:
+        """if the scores should be grouped"""
+        if self.per_context_checkbox:
+            return self.per_context_checkbox.value
+
+
+class ModelScoreComparisonAndCohortsWidget(Box, ValueWidget):
+    value = traitlets.Dict(help="The selected values for the cohorts and model options")
+
+    def __init__(
+        self,
+        cohort_groups: dict[str, tuple[Any]],
+        target_names: tuple[Any],
+        score_names: tuple[Any],
+        per_context: bool = False,
+    ):
+        """
+        Widget for model based options and cohort selection
+
+        Parameters
+        ----------
+        cohort_groups : dict[str, tuple[Any]]
+            cohort columns and groupings
+        target_names : tuple[Any]
+            model target columns
+        score_names : tuple[Any]
+            model score columns
+        per_context : bool, optional
+            if scores should be grouped by context, by default False
+        """
+        self.cohort_list = MultiSelectionListWidget(options=cohort_groups, title="Cohort Filter")
+        self.model_options = ModelScoreComparisonOptionsWidget(target_names, score_names, per_context)
+        self.cohort_list.observe(self._on_value_change, "value")
+        self.model_options.observe(self._on_value_change, "value")
+
+        super().__init__(children=[self.model_options, self.cohort_list], layout=BOX_GRID_LAYOUT)
+
+        self._on_value_change()
+        self._disabled = False
+
+    @property
+    def disabled(self) -> bool:
+        return self._disabled
+
+    @disabled.setter
+    def disabled(self, disabled: bool):
+        self._disabled = disabled
+        self.cohort_list.disabled = disabled
+        self.model_options.disabled = disabled
+
+    def _on_value_change(self, change=None):
+        self.value = {
+            "cohorts": self.cohort_list.value,
+            "model_options": self.model_options.value,
+        }
+
+    @property
+    def cohorts(self) -> dict[str, tuple[str]]:
+        """selected cohorts"""
+        return self.cohort_list.value
+
+    @property
+    def target(self) -> str:
+        """target column descriptor"""
+        return self.model_options.target
+
+    @property
+    def scores(self) -> tuple[str]:
+        """Score column descriptors"""
+        return self.model_options.scores
+
+    @property
+    def group_scores(self) -> bool:
+        """If scores should be grouped by context"""
+        return self.model_options.group_scores
+
+
 class ModelOptionsAndCohortsWidget(Box, ValueWidget):
     value = traitlets.Dict(help="The selected values for the cohorts and model options")
 
@@ -216,6 +386,7 @@ class ModelOptionsAndCohortsWidget(Box, ValueWidget):
 
         super().__init__(children=[self.model_options, self.cohort_list], layout=BOX_GRID_LAYOUT)
 
+        self._on_value_change()
         self._disabled = False
 
     @property
@@ -294,6 +465,8 @@ class ModelOptionsAndCohortGroupWidget(Box, ValueWidget):
         self.model_options.observe(self._on_value_change, "value")
 
         super().__init__(children=[self.model_options, self.cohort_list], layout=BOX_GRID_LAYOUT)
+
+        self._on_value_change()
         self._disabled = False
 
     @property
@@ -383,6 +556,8 @@ class ModelInterventionOptionsWidget(VBox, ValueWidget):
         self.outcome_list.observe(self._on_value_change, "value")
         self.intervention_list.observe(self._on_value_change, "value")
         self.reference_time_list.observe(self._on_value_change, "value")
+
+        self._on_value_change()
         self._disabled = False
 
     @property
@@ -449,6 +624,8 @@ class ModelInterventionAndCohortGroupWidget(Box, ValueWidget):
         self.model_options.observe(self._on_value_change, "value")
 
         super().__init__(children=[self.model_options, self.cohort_list], layout=BOX_GRID_LAYOUT)
+
+        self._on_value_change()
         self._disabled = False
 
     @property
@@ -546,6 +723,8 @@ class ModelFairnessAuditOptions(Box, ValueWidget):
         self.fairness_list.observe(self._on_value_change, "value")
         self.fairness_slider.observe(self._on_value_change, "value")
         self.model_options.observe(self._on_value_change, "value")
+
+        self._on_value_change()
         self._disabled = False
 
     @property
@@ -712,7 +891,8 @@ class ExplorationWidget(VBox):
 
     def _on_option_change(self, change=None):
         """enable the plot to be updated"""
-        self.update_plot_widget.disabled = self.disabled
+        if not self.disabled:
+            self.update_plot_widget.disabled = self.disabled
 
     def generate_plot_args(self) -> tuple[tuple, dict]:
         """override this method with code to show a plot"""
@@ -743,7 +923,7 @@ class ExplorationModelSubgroupEvaluationWidget(ExplorationWidget):
             .. code:: python
 
                 def plot_function(
-                    cohorts: dict[str,tuple[Any]]
+                    cohort_dict: dict[str,tuple[Any]],
                     target: str,
                     score: str,
                     thresholds: tuple[float],
@@ -916,6 +1096,57 @@ class ExplorationCohortOutcomeInterventionEvaluationWidget(ExplorationWidget):
             self.option_widget.reference_time,
         ]
         kwargs = {}
+        return args, kwargs
+
+
+class ExplorationScoreComparisonByCohortWidget(ExplorationWidget):
+    """
+    A widget to explore different model scores based on a cohort selection.
+    """
+
+    def __init__(self, title: str, plot_function: Callable[..., Any]):
+        """
+        Exploration widget for model score comparison, showing a plot for a given target
+        and cohort selection, across different scores.
+
+        Parameters
+        ----------
+        title : str
+            title of the control
+        plot_function : Callable[..., Any]
+            Expected to have the following signature:
+
+            .. code:: python
+
+                def plot_function(
+                    cohort_dict: dict[str,tuple[Any]],
+                    target: str,
+                    scores: tuple[str],
+                    *, per_context: bool) -> Any
+        """
+        from seismometer.seismogram import Seismogram
+
+        sg = Seismogram()
+        super().__init__(
+            title,
+            option_widget=ModelScoreComparisonAndCohortsWidget(
+                sg.available_cohort_groups, sg.target_cols, sg.output_list, per_context=False
+            ),
+            plot_function=plot_function,
+        )
+
+    @property
+    def disabled(self):
+        return len(self.option_widget.scores) < 2
+
+    def generate_plot_args(self) -> tuple[tuple, dict]:
+        """Generates the plot arguments for the model evaluation plot"""
+        args = [
+            self.option_widget.cohorts,
+            self.option_widget.target,
+            self.option_widget.scores,
+        ]
+        kwargs = {"per_context": self.option_widget.group_scores}
         return args, kwargs
 
 
