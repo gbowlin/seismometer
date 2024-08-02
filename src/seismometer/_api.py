@@ -1479,8 +1479,7 @@ def plot_model_target_comparison(
     sg = Seismogram()
 
     cohort_filter = FilterRule.from_cohort_dictionary(cohort_dict)
-    data = cohort_filter.filter(sg.dataframe)
-    dataframe = FilterRule.isin(target_event, (0, 1)).filter(data)
+    source_data = cohort_filter.filter(sg.dataframe)
 
     # Need a dataframe with three columns, ScoreName, Score, and Target
     # Index - one copy of the index for each score name (to allow three columns of real scores.)
@@ -1489,8 +1488,9 @@ def plot_model_target_comparison(
     # Target - the target value
 
     data = []
-    for target in score:
+    for target in targets:
         target_event = pdh.event_value(target)
+        dataframe = FilterRule.isin(target_event, (0, 1)).filter(source_data)
         if per_context:
             one_score_data = pdh.event_score(dataframe, sg.entity_keys, score=score, aggregation_method="max")[
                 [score, target_event]

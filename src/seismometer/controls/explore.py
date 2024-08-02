@@ -281,6 +281,77 @@ class ModelScoreComparisonOptionsWidget(VBox, ValueWidget):
             return self.per_context_checkbox.value
 
 
+class ModelScoreComparisonAndCohortsWidget(Box, ValueWidget):
+    value = traitlets.Dict(help="The selected values for the cohorts and model options")
+
+    def __init__(
+        self,
+        cohort_groups: dict[str, tuple[Any]],
+        target_names: tuple[Any],
+        score_names: tuple[Any],
+        per_context: bool = False,
+    ):
+        """
+        Widget for model based options and cohort selection
+
+        Parameters
+        ----------
+        cohort_groups : dict[str, tuple[Any]]
+            cohort columns and groupings
+        target_names : tuple[Any]
+            model target columns
+        score_names : tuple[Any]
+            model score columns
+        per_context : bool, optional
+            if scores should be grouped by context, by default False
+        """
+        self.cohort_list = MultiSelectionListWidget(options=cohort_groups, title="Cohort Filter")
+        self.model_options = ModelScoreComparisonOptionsWidget(target_names, score_names, per_context)
+        self.cohort_list.observe(self._on_value_change, "value")
+        self.model_options.observe(self._on_value_change, "value")
+
+        super().__init__(children=[self.model_options, self.cohort_list], layout=BOX_GRID_LAYOUT)
+
+        self._on_value_change()
+        self._disabled = False
+
+    @property
+    def disabled(self) -> bool:
+        return self._disabled
+
+    @disabled.setter
+    def disabled(self, disabled: bool):
+        self._disabled = disabled
+        self.cohort_list.disabled = disabled
+        self.model_options.disabled = disabled
+
+    def _on_value_change(self, change=None):
+        self.value = {
+            "cohorts": self.cohort_list.value,
+            "model_options": self.model_options.value,
+        }
+
+    @property
+    def cohorts(self) -> dict[str, tuple[str]]:
+        """selected cohorts"""
+        return self.cohort_list.value
+
+    @property
+    def target(self) -> str:
+        """target column descriptor"""
+        return self.model_options.target
+
+    @property
+    def scores(self) -> tuple[str]:
+        """Score column descriptors"""
+        return self.model_options.scores
+
+    @property
+    def group_scores(self) -> bool:
+        """If scores should be grouped by context"""
+        return self.model_options.group_scores
+
+
 class ModelTargetComparisonOptionsWidget(VBox, ValueWidget):
     value = traitlets.Dict(help="The selected values for the model options and targets to evaluate")
 
@@ -373,7 +444,7 @@ class ModelTargetComparisonOptionsWidget(VBox, ValueWidget):
             return self.per_context_checkbox.value
 
 
-class ModelScoreComparisonAndCohortsWidget(Box, ValueWidget):
+class ModelTargetComparisonAndCohortsWidget(Box, ValueWidget):
     value = traitlets.Dict(help="The selected values for the cohorts and model options")
 
     def __init__(
@@ -398,7 +469,7 @@ class ModelScoreComparisonAndCohortsWidget(Box, ValueWidget):
             if scores should be grouped by context, by default False
         """
         self.cohort_list = MultiSelectionListWidget(options=cohort_groups, title="Cohort Filter")
-        self.model_options = ModelScoreComparisonOptionsWidget(target_names, score_names, per_context)
+        self.model_options = ModelTargetComparisonOptionsWidget(target_names, score_names, per_context)
         self.cohort_list.observe(self._on_value_change, "value")
         self.model_options.observe(self._on_value_change, "value")
 
@@ -429,14 +500,14 @@ class ModelScoreComparisonAndCohortsWidget(Box, ValueWidget):
         return self.cohort_list.value
 
     @property
-    def target(self) -> str:
-        """target column descriptor"""
-        return self.model_options.target
+    def targets(self) -> str:
+        """target column descriptors"""
+        return self.model_options.targets
 
     @property
-    def scores(self) -> tuple[str]:
-        """Score column descriptors"""
-        return self.model_options.scores
+    def score(self) -> tuple[str]:
+        """Score column descriptor"""
+        return self.model_options.score
 
     @property
     def group_scores(self) -> bool:
@@ -1272,7 +1343,7 @@ class ExplorationTargetComparisonByCohortWidget(ExplorationWidget):
         sg = Seismogram()
         super().__init__(
             title,
-            option_widget=ModelTargetComparisonOptionsWidget(
+            option_widget=ModelTargetComparisonAndCohortsWidget(
                 sg.available_cohort_groups, sg.target_cols, sg.output_list, per_context=False
             ),
             plot_function=plot_function,
