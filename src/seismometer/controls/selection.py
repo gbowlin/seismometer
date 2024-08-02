@@ -315,7 +315,8 @@ class MultiselectDropdownWidget(ValueWidget, VBox):
         )
         self.selection_options = VBox(children=[], layout=Layout(align_self="flex-end"))
         self.buttons = {
-            option: Button(description=option, tooltip=f"remove {option}", indent=True) for option in options
+            option: Button(description=option, tooltip=f"remove {option}", indent=True, button_style="primary")
+            for option in options
         }
 
         for val in self.value:

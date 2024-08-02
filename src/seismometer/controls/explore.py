@@ -189,7 +189,7 @@ class ModelOptionsWidget(VBox, ValueWidget):
 
 
 class ModelScoreComparisonOptionsWidget(VBox, ValueWidget):
-    value = traitlets.Dict(help="The selected values for the model options and scores to compair")
+    value = traitlets.Dict(help="The selected values for the model options and scores to compare")
 
     def __init__(
         self,
@@ -271,6 +271,98 @@ class ModelScoreComparisonOptionsWidget(VBox, ValueWidget):
 
     @property
     def scores(self) -> tuple[str]:
+        """score column descriptor"""
+        return self.score_list.value
+
+    @property
+    def group_scores(self) -> bool:
+        """if the scores should be grouped"""
+        if self.per_context_checkbox:
+            return self.per_context_checkbox.value
+
+
+class ModelTargetComparisonOptionsWidget(VBox, ValueWidget):
+    value = traitlets.Dict(help="The selected values for the model options and targets to evaluate")
+
+    def __init__(
+        self,
+        target_names: tuple[Any],
+        score_names: tuple[Any],
+        per_context: Optional[bool] = None,
+    ):
+        """Widget for model based options
+
+        Parameters
+        ----------
+        target_names : tuple[Any]
+            list of target column names
+        score_names : tuple[Any]
+            list of model score names
+        thresholds : dict[str, float]
+            list of thresholds for the model scores, will be sorted into decreasing order
+        per_context : bool, optional
+            if scores should be grouped by context, by default None, in which case this checkbox is not shown.
+        """
+        self.title = html_title("Model Options")
+        self.target_list = MultiselectDropdownWidget(
+            options=target_names, value=target_names[0:2], title="Compare Targets"
+        )
+        self.score_list = Dropdown(
+            options=score_names,
+            value=score_names[0],
+            description="Score Column",
+            style=WIDE_LABEL_STYLE,
+        )
+        self.target_list.observe(self._on_value_change, "value")
+        self.score_list.observe(self._on_value_change, "value")
+        children = [self.title, self.target_list, self.score_list]
+
+        if per_context is not None:
+            self.per_context_checkbox = Checkbox(
+                value=per_context,
+                description="combine scores",
+                disabled=False,
+                tooltip="Combine scores by taking the maximum score in the target window",
+                style=WIDE_LABEL_STYLE,
+            )
+            children.append(self.per_context_checkbox)
+            self.per_context_checkbox.observe(self._on_value_change, "value")
+        else:
+            self.per_context_checkbox = None
+
+        super().__init__(
+            children=children,
+            layout=Layout(align_items="flex-start", flex="0 0 auto"),
+        )
+        self._on_value_change()
+        self._disabled = False
+
+    @property
+    def disabled(self) -> bool:
+        return self._disabled
+
+    @disabled.setter
+    def disabled(self, disabled: bool):
+        self._disabled = disabled
+        self.target_list.disabled = disabled
+        self.score_list.disabled = disabled
+        if self.per_context_checkbox:
+            self.per_context_checkbox.disabled = disabled
+
+    def _on_value_change(self, change=None):
+        self.value = {
+            "targets": self.targets,
+            "score": self.score,
+            "group_scores": self.group_scores,
+        }
+
+    @property
+    def targets(self) -> str:
+        """target column descriptor"""
+        return self.target_list.value
+
+    @property
+    def score(self) -> tuple[str]:
         """score column descriptor"""
         return self.score_list.value
 
@@ -517,7 +609,7 @@ class ModelOptionsAndCohortGroupWidget(Box, ValueWidget):
 
 
 class ModelInterventionOptionsWidget(VBox, ValueWidget):
-    value = traitlets.Dict(help="The selected values for the intevetion options")
+    value = traitlets.Dict(help="The selected values for the intervention options")
 
     def __init__(
         self,
@@ -1145,6 +1237,57 @@ class ExplorationScoreComparisonByCohortWidget(ExplorationWidget):
             self.option_widget.cohorts,
             self.option_widget.target,
             self.option_widget.scores,
+        ]
+        kwargs = {"per_context": self.option_widget.group_scores}
+        return args, kwargs
+
+
+class ExplorationTargetComparisonByCohortWidget(ExplorationWidget):
+    """
+    A widget to explore different model targets based on a cohort selection.
+    """
+
+    def __init__(self, title: str, plot_function: Callable[..., Any]):
+        """
+        Exploration widget for model target comparison, showing a plot for a given scores
+        and cohort selection, across different targets.
+
+        Parameters
+        ----------
+        title : str
+            title of the control
+        plot_function : Callable[..., Any]
+            Expected to have the following signature:
+
+            .. code:: python
+
+                def plot_function(
+                    cohort_dict: dict[str,tuple[Any]],
+                    targets: tuple[str],
+                    score: str,
+                    *, per_context: bool) -> Any
+        """
+        from seismometer.seismogram import Seismogram
+
+        sg = Seismogram()
+        super().__init__(
+            title,
+            option_widget=ModelTargetComparisonOptionsWidget(
+                sg.available_cohort_groups, sg.target_cols, sg.output_list, per_context=False
+            ),
+            plot_function=plot_function,
+        )
+
+    @property
+    def disabled(self):
+        return len(self.option_widget.scores) < 2
+
+    def generate_plot_args(self) -> tuple[tuple, dict]:
+        """Generates the plot arguments for the model evaluation plot"""
+        args = [
+            self.option_widget.cohorts,
+            self.option_widget.targets,
+            self.option_widget.score,
         ]
         kwargs = {"per_context": self.option_widget.group_scores}
         return args, kwargs

@@ -14,6 +14,7 @@ from .controls.explore import (
     ExplorationCohortSubclassEvaluationWidget,
     ExplorationModelSubgroupEvaluationWidget,
     ExplorationScoreComparisonByCohortWidget,
+    ExplorationTargetComparisonByCohortWidget,
     ExplorationWidget,
     ModelFairnessAuditOptions,
 )
@@ -1395,7 +1396,7 @@ def show_cohort_summaries(by_target: bool = False, by_score: bool = False) -> HT
 
 @disk_cached_html_segment
 @export
-def plot_model_score_comparision(
+def plot_model_score_comparison(
     cohort_dict: dict[str, tuple[Any]], target: str, scores: tuple[str], *, per_context: bool
 ) -> HTML:
     """
@@ -1419,33 +1420,104 @@ def plot_model_score_comparision(
     target_event = pdh.event_value(target)
     dataframe = FilterRule.isin(target_event, (0, 1)).filter(data)
 
-    # Need a dataframe with three columns, ScoreName, Scores, and Target
+    # Need a dataframe with three columns, ScoreName, Score, and Target
     # Index - one copy of the index for each score name (to allow three columns of real scores.)
     # ScoreName - the cohort column (which score was used)
-    # Scores - the score value
+    # Score - the score value
     # Target - the target value
 
-    # TODO Implement this
-    if per_context:
-        for score in scores:
-            data = pdh.event_score(dataframe, sg.entity_keys, score=score, aggregation_method="max")
-    else:
-        data = dataframe
+    data = []
+    for score in scores:
+        if per_context:
+            one_score_data = pdh.event_score(dataframe, sg.entity_keys, score=score, aggregation_method="max")[
+                [score, target_event]
+            ]
+        else:
+            one_score_data = dataframe[[score, target_event]].copy()
+        one_score_data["ScoreName"] = score
+        one_score_data.rename(columns={score: "Score"}, inplace=True)
+        data.append(one_score_data)
+    data = pd.concat(data, axis=0, ignore_index=True)
+    data["ScoreName"] = data["ScoreName"].astype("category")
 
     plot_data = get_cohort_performance_data(
-        data, "ScoreName", proba="Scores", true=target, splits=scores, censor_threshold=sg.censor_threshold
+        data,
+        "ScoreName",
+        proba=data["Score"],
+        true=data[target_event],
+        splits=list(scores),
+        censor_threshold=sg.censor_threshold,
     )
     try:
         assert_valid_performance_metrics_df(plot_data)
     except ValueError:
         return template.render_censored_plot_message(sg.censor_threshold)
-    svg = plot.cohort_evaluation_vs_threshold(plot_data, cohort_feature=cohort_col)
-    title = f"Model Performance Metrics on {cohort_col} across Thresholds"
+    svg = plot.cohort_evaluation_vs_threshold(plot_data, cohort_feature="ScoreName")
+    title = f"Model Metrics: {', '.join(scores)} vs {target}"
     return template.render_title_with_image(title, svg)
 
-    return template.render_title_message(
-        f"Score Comparison: {', '.join(scores)}", message=f"{cohort_dict} {target} {scores} {per_context}"
+
+@disk_cached_html_segment
+@export
+def plot_model_target_comparison(
+    cohort_dict: dict[str, tuple[Any]], targets: tuple[str], score: str, *, per_context: bool
+) -> HTML:
+    """
+    Plots a comparison of model targets for a given score and subpopulation.
+
+    Parameters
+    ----------
+    cohort_dict : dict[str,tuple[Any]]
+        The cohort values that comprise the subpopulation of interest.
+    targets : tuple[str]
+        The target column to compare.
+    scores: str
+        The score column
+    per_context : bool
+        If True, limits data to one row per context_id.
+    """
+    sg = Seismogram()
+
+    cohort_filter = FilterRule.from_cohort_dictionary(cohort_dict)
+    data = cohort_filter.filter(sg.dataframe)
+    dataframe = FilterRule.isin(target_event, (0, 1)).filter(data)
+
+    # Need a dataframe with three columns, ScoreName, Score, and Target
+    # Index - one copy of the index for each score name (to allow three columns of real scores.)
+    # TargetName - the cohort column (which target was used)
+    # Score - the score value
+    # Target - the target value
+
+    data = []
+    for target in score:
+        target_event = pdh.event_value(target)
+        if per_context:
+            one_score_data = pdh.event_score(dataframe, sg.entity_keys, score=score, aggregation_method="max")[
+                [score, target_event]
+            ]
+        else:
+            one_score_data = dataframe[[score, target_event]].copy()
+        one_score_data["TargetName"] = target
+        one_score_data.rename(columns={target_event: "Target"}, inplace=True)
+        data.append(one_score_data)
+    data = pd.concat(data, axis=0, ignore_index=True)
+    data["TargetName"] = data["TargetName"].astype("category")
+
+    plot_data = get_cohort_performance_data(
+        data,
+        "TargetName",
+        proba=data[score],
+        true=data["Target"],
+        splits=list(targets),
+        censor_threshold=sg.censor_threshold,
     )
+    try:
+        assert_valid_performance_metrics_df(plot_data)
+    except ValueError:
+        return template.render_censored_plot_message(sg.censor_threshold)
+    svg = plot.cohort_evaluation_vs_threshold(plot_data, cohort_feature="ScoreName")
+    title = f"Model Metrics: {', '.join(targets)} vs {score}"
+    return template.render_title_with_image(title, svg)
 
 
 # endregion
@@ -1470,7 +1542,7 @@ class ExploreModelEvaluation(ExplorationModelSubgroupEvaluationWidget):
 
 
 @export
-class ExploreModelScoreComparision(ExplorationScoreComparisonByCohortWidget):
+class ExploreModelScoreComparison(ExplorationScoreComparisonByCohortWidget):
     """
     Exploration widget for model evaluation, showing model performance for a specific subpopulation.
 
@@ -1482,7 +1554,23 @@ class ExploreModelScoreComparision(ExplorationScoreComparisonByCohortWidget):
         """
         Passes the plot function to the superclass.
         """
-        super().__init__("Model Score Comparison", plot_model_score_comparision)
+        super().__init__("Model Score Comparison", plot_model_score_comparison)
+
+
+@export
+class ExploreModelTargetComparison(ExplorationTargetComparisonByCohortWidget):
+    """
+    Exploration widget for model target evaluation, showing model performance for a specific subpopulation.
+
+    This includes the ROC, recall vs predicted condition prevalence, calibration,
+    PPV vs sensitivity, sensitivity/specificity/ppv, and a histogram.
+    """
+
+    def __init__(self):
+        """
+        Passes the plot function to the superclass.
+        """
+        super().__init__("Model Target Comparison", plot_model_target_comparison)
 
 
 @export

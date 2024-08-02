@@ -263,7 +263,7 @@ def label_cohorts_categorical(series: SeriesOrArray, cat_values: Optional[list] 
     series : SeriesOrArray
         pandas series of data to bin.
     cat_values : Optional[list], optional
-        List of categories to reduce to (default: None-> all observeded categories).
+        List of categories to reduce to (default: None-> all observed categories).
 
     Returns
     -------

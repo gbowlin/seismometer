@@ -115,7 +115,7 @@ class ConfigProvider:
     @property
     def config(self) -> OtherInfo:
         """
-        The configuration definiton.
+        The configuration definition.
 
         Usually from config.yml, this is primarily used during initial loading to know
         where other pieces are located.
