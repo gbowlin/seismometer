@@ -4,14 +4,9 @@ from typing import Any, Callable, Literal, Optional
 
 import traitlets
 from IPython.display import display
-from ipywidgets import HTML, Box, Button, Checkbox, Dropdown, FloatSlider, HBox, Layout, Output, ValueWidget, VBox
+from ipywidgets import HTML, Box, Button, Checkbox, Dropdown, FloatSlider, Layout, Output, ValueWidget, VBox
 
-from .selection import (
-    DisjointSelectionListsWidget,
-    MultiselectDropdownWidget,
-    MultiSelectionListWidget,
-    SelectionListWidget,
-)
+from .selection import DisjointSelectionListsWidget, MultiselectDropdownWidget, MultiSelectionListWidget
 from .styles import BOX_GRID_LAYOUT, WIDE_LABEL_STYLE, html_title
 from .thresholds import MonotonicProbabilitySliderListWidget
 
@@ -223,7 +218,10 @@ class ModelScoreComparisonOptionsWidget(VBox, ValueWidget):
 
         self.target_list.observe(self._on_value_change, "value")
         self.score_list.observe(self._on_value_change, "value")
-        children = [self.title, self.target_list, self.score_list]
+        children = [
+            self.title,
+            VBox(children=[self.target_list, self.score_list], layout=Layout(align_items="flex-end")),
+        ]
 
         if per_context is not None:
             self.per_context_checkbox = Checkbox(
@@ -386,7 +384,10 @@ class ModelTargetComparisonOptionsWidget(VBox, ValueWidget):
         )
         self.target_list.observe(self._on_value_change, "value")
         self.score_list.observe(self._on_value_change, "value")
-        children = [self.title, self.target_list, self.score_list]
+        children = [
+            self.title,
+            VBox(children=[self.target_list, self.score_list], layout=Layout(align_items="flex-end")),
+        ]
 
         if per_context is not None:
             self.per_context_checkbox = Checkbox(
@@ -875,9 +876,10 @@ class ModelFairnessAuditOptions(Box, ValueWidget):
             style=WIDE_LABEL_STYLE,
         )
         thresholds = {"Score Threshold": score_threshold}
-        self.fairness_list = SelectionListWidget(options=all_metrics, value=fairness_metrics, title="Metrics")
+        self.fairness_list = MultiselectDropdownWidget(options=all_metrics, value=fairness_metrics, title="Metrics")
         fairness_section = VBox(
-            children=[html_title("Audit Options"), HBox(children=[self.fairness_list, self.fairness_slider])]
+            children=[html_title("Audit Options"), self.fairness_slider, self.fairness_list],
+            layout=Layout(align_items="flex-end"),
         )
         self.model_options = ModelOptionsWidget(target_names, score_names, thresholds, per_context)
 

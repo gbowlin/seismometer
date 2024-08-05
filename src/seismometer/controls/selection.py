@@ -4,7 +4,7 @@ from typing import Optional
 import traitlets
 from ipywidgets import HTML, Box, Button, Dropdown, Label, Layout, Stack, ToggleButton, ValueWidget, VBox, jslink
 
-from .styles import DROPDOWN_LAYOUT, WIDE_LABEL_STYLE, html_title
+from .styles import DROPDOWN_LAYOUT, WIDE_BUTTON_LAYOUT, WIDE_LABEL_STYLE, html_title
 
 
 class SelectionListWidget(ValueWidget, VBox):
@@ -131,7 +131,7 @@ class MultiSelectionListWidget(ValueWidget, VBox):
         self.value = values
 
         for key in options:
-            selection_widget = SelectionListWidget(title=key, options=options[key], value=values.get(key, None))
+            selection_widget = MultiselectDropdownWidget(title=key, options=options[key], value=values.get(key, None))
             self.selection_widgets[key] = selection_widget
             selection_widget.observe(self._on_subselection_change, "value")
         self.value_update_in_progress = False
@@ -247,7 +247,7 @@ class DisjointSelectionListsWidget(ValueWidget, VBox):
         self.dropdown.observe(self._on_selection_change, "value")
         self.selection_widgets = {}
         for key in options:
-            selection_widget = SelectionListWidget(options=options[key], value=values[key])
+            selection_widget = MultiselectDropdownWidget(options=options[key], value=values[key])
             self.selection_widgets[key] = selection_widget
             selection_widget.observe(self._on_selection_change, "value")
         self.stack = Stack(children=[self.selection_widgets[key] for key in self.selection_widgets], selected_index=0)
@@ -294,7 +294,7 @@ class MultiselectDropdownWidget(ValueWidget, VBox):
 
     value = traitlets.Tuple(help="The selected values for the dropdown.")
 
-    def __init__(self, options: tuple[str], value: Optional[tuple[str]] = None, *, title: str = ""):
+    def __init__(self, options: tuple[str], value: Optional[tuple[str]] = None, *, title: str = "", multi_select=True):
         """
         A dropdown selector where multiple selections are allowed.
 
@@ -309,13 +309,25 @@ class MultiselectDropdownWidget(ValueWidget, VBox):
         """
         self.options = options
         self.value = tuple(value) if value else ()
-
+        self.multi_select = multi_select
+        default_option = (title if title else "Add...", "")
+        tooltip = f"Select an option to add to {title}" if title else "Select an option to add"
         self.dropdown = Dropdown(
-            description=title, options=[("Add...", "")] + list(zip(options, options)), value="", style=WIDE_LABEL_STYLE
+            options=[default_option] + list(zip(options, options)),
+            value="",
+            style=WIDE_LABEL_STYLE,
+            tooltip=tooltip,
+            layout=WIDE_BUTTON_LAYOUT,
         )
-        self.selection_options = VBox(children=[], layout=Layout(align_self="flex-end"))
+        self.selection_options = VBox(children=[], layout=Layout(align_self="flex-end", align_items="flex-end"))
         self.buttons = {
-            option: Button(description=option, tooltip=f"remove {option}", indent=True, button_style="primary")
+            option: Button(
+                description=option,
+                tooltip=f"remove {option}",
+                indent=True,
+                button_style="primary",
+                layout=WIDE_BUTTON_LAYOUT,
+            )
             for option in options
         }
 
@@ -338,8 +350,11 @@ class MultiselectDropdownWidget(ValueWidget, VBox):
 
     def _insert_button(self, val):
         button = self.buttons[val]
-        if button not in self.selection_options.children:
-            self.selection_options.children = [child for child in self.selection_options.children] + [button]
+        if self.multi_select:
+            if button not in self.selection_options.children:
+                self.selection_options.children = [child for child in self.selection_options.children] + [button]
+        else:
+            self.selection_options.children = [button]
 
     def _on_dropdown_changed(self, change):
         if change["owner"] != self.dropdown:
@@ -348,8 +363,12 @@ class MultiselectDropdownWidget(ValueWidget, VBox):
         if val == "" or val in self.value:
             self.dropdown.value = ""
             return
+
         self._insert_button(val)
-        self.value = tuple([val for val in self.value] + [val])
+        if self.multi_select:
+            self.value = tuple([val for val in self.value] + [val])
+        else:
+            self.value = tuple([val])
         self.dropdown.value = ""
 
     @property
@@ -370,3 +389,11 @@ class MultiselectDropdownWidget(ValueWidget, VBox):
         for val in change["new"]:
             self._insert_button(val)
         self.dropdown.value = ""
+
+    def get_selection_text(self) -> str:
+        """Description of the currently selected values."""
+        text = f"{self.title_label.value}: " if self.title_label else ""
+        if self.value:
+            return text + f"{', '.join([str(x) for x in self.value])}"
+        else:
+            return text + ""
