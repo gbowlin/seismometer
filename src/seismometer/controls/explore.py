@@ -1007,9 +1007,17 @@ class ExplorationWidget(VBox):
         if not initial:
             self.center.clear_output()
             with self.center:
-                display(plot)
+                if isinstance(plot, list):
+                    for item in plot:
+                        display(item)
+                else:
+                    display(plot)
         else:
-            self.center.append_display_data(plot)
+            if isinstance(plot, list):
+                for item in plot:
+                    self.center.append_display_data(item)
+            else:
+                self.center.append_display_data(plot)
 
     def _on_plot_button_click(self, button=None):
         """handle for the update plot button"""

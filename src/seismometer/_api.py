@@ -233,7 +233,10 @@ def generate_fairness_audit(
     HTML | IFrame | Altair Chart
         IFrame holding the HTML of the audit
     """
+
     sg = Seismogram()
+    target = pdh.event_value(target_column)
+
     path = "aequitas_{cohorts}_with_{target}_and_{score}_gt_{threshold}_metrics_{metrics}_ratio_{ratio}".format(
         cohorts="_".join(cohort_columns),
         target=target_column,
@@ -249,13 +252,11 @@ def generate_fairness_audit(
 
     if NotebookHost.supports_iframe() and fairness_path.exists():
         return load_as_iframe(fairness_path, height=height)
-
-    target = pdh.event_value(target_column)
     data = (
         pdh.event_score(
             sg.data(),
             sg.entity_keys,
-            score=sg.output,
+            score=score_column,
             ref_event=sg.predict_time,
             aggregation_method=sg.event_aggregation_method(sg.target),
         )
@@ -263,14 +264,14 @@ def generate_fairness_audit(
         else sg.data()
     )
 
-    data = data[[target, score_column] + cohort_columns]
-    data = FilterRule.isin(target, (0, 1)).filter(data)
-    if len(data.index) < sg.censor_threshold:
+    cohort_data = data[[target, score_column] + cohort_columns]
+    cohort_data = FilterRule.isin(target, (0, 1)).filter(cohort_data)
+    if len(cohort_data.index) < sg.censor_threshold:
         return template.render_censored_plot_message(sg.censor_threshold)
 
     try:
         altair_plot = fairness_audit_altair(
-            data, cohort_columns, score_column, target, score_threshold, metric_list, fairness_threshold
+            cohort_data, cohort_columns, score_column, target, score_threshold, metric_list, fairness_threshold
         )
     except CensoredResultException as error:
         return template.render_censored_data_message(error.message)
@@ -1664,7 +1665,26 @@ class ExploreFairnessAudit(ExplorationWidget):
             score_threshold=max(sg.thresholds),
             per_context=True,
         )
-        super().__init__(title=title, option_widget=option_widget, plot_function=generate_fairness_audit)
+
+        def fairness_audit_wrapper(
+            cohort_columns: list[str],
+            target_column: str,
+            score_column: str,
+            score_threshold: float,
+            per_context: bool = False,
+            metric_list: Optional[list[str]] = None,
+            fairness_threshold: float = 1.25,
+        ):
+            audits = []
+            for cohorts in np.array_split(cohort_columns, 4):
+                cohorts = cohorts.tolist()
+                result = generate_fairness_audit(
+                    cohorts, target_column, score_column, score_threshold, per_context, metric_list, fairness_threshold
+                )
+                audits.append(result)
+            return audits
+
+        super().__init__(title=title, option_widget=option_widget, plot_function=fairness_audit_wrapper)
 
     def generate_plot_args(self) -> tuple[tuple, dict]:
         """
