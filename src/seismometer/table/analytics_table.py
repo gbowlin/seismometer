@@ -1,5 +1,4 @@
-# Define METRICS after STATNAMES and OVERALL_PERFORMANCE are defined
-# (insert this after those variables are defined in the file)
+import logging
 from enum import Enum
 from typing import Any, List, Optional
 
@@ -23,6 +22,8 @@ from seismometer.html import template
 from seismometer.seismogram import Seismogram
 
 from .analytics_table_config import COLORING_CONFIG_DEFAULT, AnalyticsTableConfig
+
+logger = logging.getLogger("seismometer")
 
 # region Analytics Table
 
@@ -135,6 +136,7 @@ class AnalyticsTable:
         self._initializing = False
         self.per_context = per_context
         self.censor_threshold = censor_threshold
+        logger.info(f"Starting analytics table, data has {len(self.df)} rows.")
 
     def _validate_df_statistics_data(self):
         if not self._initializing:  # Skip validation during initial setup
@@ -642,7 +644,12 @@ class AnalyticsTableOptionsWidget(VBox, traitlets.HasTraits):
             style={"description_width": "min-content"},
             layout=Layout(width="calc(max(max-content, var(--jp-widgets-inline-width-short)))", min_width="200px"),
         )
-        self._cohort_dict = MultiSelectionListWidget(cohort_dict or sg.available_cohort_groups, title="Cohort Filter")
+        self._cohort_dict = MultiSelectionListWidget(
+            cohort_dict or sg.available_cohort_groups,
+            title="Cohort Filter",
+            hierarchies=sg.cohort_hierarchies,
+            hierarchy_combinations=sg.cohort_hierarchy_combinations,
+        )
         self.per_context_checkbox = _combine_scores_checkbox(per_context=False)
 
         self._target_cols.observe(self._on_value_changed, names="value")
